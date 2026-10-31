@@ -26,6 +26,7 @@
   .ctl { display: flex; align-items: center; gap: 8px; background: #161a22e6; border: 1px solid #232833;
          border-radius: 8px; padding: 6px 12px; font-size: 13px; color: #8b93a1; }
   .ctl input[type=range] { width: 120px; accent-color: #7aa2ff; }
+  .ctl input[type=checkbox] { accent-color: #7aa2ff; }
   .ctl b { color: #d7dce3; font-weight: 600; min-width: 34px; text-align: right; }
   #stats { position: absolute; bottom: 12px; left: 12px; right: 12px; display: flex; gap: 14px;
            flex-wrap: wrap; font-size: 12.5px; color: #8b93a1; font-variant-numeric: tabular-nums; }
@@ -55,19 +56,24 @@
     </div>
     <label class="ctl">blend k <input id="k" type="range" min="0" max="0.6" step="0.01" value="0.45"><b id="kv">0.45</b></label>
     <label class="ctl">res <input id="res" type="range" min="48" max="128" step="8" value="88"><b id="resv">88³</b></label>
+    <label class="ctl" id="simCtl"><input id="simplify" type="checkbox"> simplify</label>
+    <label class="ctl" id="targetCtl" hidden>tris <input id="target" type="range" min="200" max="20000" step="100" value="3000"><b id="targetv">3k</b></label>
   </div>
   <div id="stats"></div>
   <div id="busy">generating…</div>
 </div>
 <div id="err"></div>
 <footer>Drag to orbit, scroll to zoom. Cut faces inherit the cutter's color; blended unions mix materials.
-  Meshes are watertight (every edge shared by exactly two faces). three.js is loaded from a CDN;
-  the geometry kernel itself is this repo's <code>sdfcsg.js</code>.</footer>
+  Meshes are watertight (every edge shared by exactly two faces). The optional simplify step runs
+  meshoptimizer's QEM edge-collapse decimation (WASM, CDN) — toggle it and pick a triangle budget.
+  three.js and meshoptimizer load from CDNs; the geometry kernel itself is this repo's
+  <code>sdfcsg.js</code>. Deep-linkable: <code>?shape=ring&k=0.3&res=96&simplify=1&target=2000</code></footer>
 
 <script type="importmap">
 { "imports": {
     "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
-    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/" } }
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "meshopt": "https://cdn.jsdelivr.net/npm/meshoptimizer@1.3.0/meshopt_simplifier.js" } }
 </script>
 
 <script type="module">
@@ -75,6 +81,11 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { palette, sphere, box, capsule, torus, union, subtract, intersect, surfaceNets }
   from './sdfcsg.js';
+
+// Optional: QEM simplification (meshoptimizer, wasm embedded in the module).
+// Loaded dynamically so the page still works if the CDN is unreachable.
+let MeshoptSimplifier = null;
+try { ({ MeshoptSimplifier } = await import('meshopt')); } catch { /* unavailable */ }
 
 const err = document.getElementById('err');
 const show = m => { err.style.display = 'block'; err.textContent = m; };
@@ -115,29 +126,53 @@ new ResizeObserver(resize).observe(stage); resize();
 
 const stats = document.getElementById('stats'), busy = document.getElementById('busy');
 const kEl = document.getElementById('k'), resEl = document.getElementById('res');
+const simplifyEl = document.getElementById('simplify'), targetEl = document.getElementById('target');
+const targetCtl = document.getElementById('targetCtl'), simCtl = document.getElementById('simCtl');
 let current = 'blob', queued = false;
+if (!MeshoptSimplifier) simCtl.style.display = 'none';   // no CDN → no toggle
 
 function generate() {
   const def = shapes[current], k = +kEl.value, r = +resEl.value;
   busy.style.display = 'block';
-  setTimeout(() => {                                   // let the UI paint first
-    const t0 = performance.now();
-    const { verts, colors, faces } = surfaceNets(def.tree(k), def.lo, def.hi, [r, r, r]);
-    const ms = performance.now() - t0;
-    if (mesh) { scene.remove(mesh); mesh.geometry.dispose(); mesh.material.dispose(); }
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute(verts.flat(), 3));
-    g.setAttribute('color', new THREE.Float32BufferAttribute(colors.flat(), 3));
-    g.setIndex(faces.flat()); g.computeVertexNormals();
-    mesh = new THREE.Mesh(g, new THREE.MeshStandardMaterial({
-      vertexColors: true, roughness: 0.55, metalness: 0.05 }));
-    scene.add(mesh);
-    busy.style.display = 'none';
-    stats.innerHTML = `<span><b>${verts.length.toLocaleString()}</b> verts</span>` +
-      `<span><b>${faces.length.toLocaleString()}</b> tris</span>` +
-      `<span><b>${ms.toFixed(0)}</b> ms</span>` +
-      `<span>res <b>${r}³</b></span><span>blend k <b>${k.toFixed(2)}</b></span>` +
-      `<span>watertight by construction (surface nets)</span>`;
+  setTimeout(async () => {                               // let the UI paint first
+    try {
+      const t0 = performance.now();
+      const { verts, colors, faces } = surfaceNets(def.tree(k), def.lo, def.hi, [r, r, r]);
+      const ms = performance.now() - t0;
+
+      let idx = faces.flat();                            // QEM simplification (toggleable)
+      let sim = null;
+      if (simplifyEl.checked && MeshoptSimplifier) {
+        await MeshoptSimplifier.ready;
+        const t1 = performance.now();
+        const target = Math.max(3, Math.min(Math.floor(+targetEl.value / 3) * 3, faces.length * 3));
+        const [sidx, err] = MeshoptSimplifier.simplify(
+          new Uint32Array(idx), new Float32Array(verts.flat()), 3, target, 1, []);
+        idx = sidx;
+        sim = { dense: faces.length, out: sidx.length / 3, err, ms: performance.now() - t1 };
+      }
+
+      if (mesh) { scene.remove(mesh); mesh.geometry.dispose(); mesh.material.dispose(); }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(verts.flat(), 3));
+      g.setAttribute('color', new THREE.Float32BufferAttribute(colors.flat(), 3));
+      g.setIndex(new THREE.Uint32BufferAttribute(idx, 1)); g.computeVertexNormals();
+      mesh = new THREE.Mesh(g, new THREE.MeshStandardMaterial({
+        vertexColors: true, roughness: 0.55, metalness: 0.05 }));
+      scene.add(mesh);
+      busy.style.display = 'none';
+      stats.innerHTML =
+        `<span><b>${verts.length.toLocaleString()}</b> verts</span>` +
+        (sim ? `<span>dense <b>${sim.dense.toLocaleString()}</b> → <b>${sim.out.toLocaleString()}</b> tris</span>` +
+               `<span>QEM err <b>${sim.err.toFixed(4)}</b>, <b>${sim.ms.toFixed(0)}</b> ms</span>`
+            : `<span><b>${faces.length.toLocaleString()}</b> tris</span>`) +
+        `<span>gen <b>${ms.toFixed(0)}</b> ms</span>` +
+        `<span>res <b>${r}³</b></span><span>blend k <b>${k.toFixed(2)}</b></span>` +
+        `<span>watertight by construction (surface nets)</span>`;
+    } catch (e) {
+      busy.style.display = 'none';
+      show(`generation failed: ${e.message}`);
+    }
   }, 30);
 }
 const queue = () => { if (!queued) { queued = true;
@@ -153,9 +188,27 @@ document.getElementById('shapes').addEventListener('click', e => {
 });
 kEl.addEventListener('input', () => { document.getElementById('kv').textContent = (+kEl.value).toFixed(2); queue(); });
 resEl.addEventListener('input', () => { document.getElementById('resv').textContent = `${resEl.value}³`; queue(); });
+simplifyEl.addEventListener('change', () => { targetCtl.hidden = !simplifyEl.checked; queue(); });
+targetEl.addEventListener('input', () => {
+  const v = +targetEl.value;
+  document.getElementById('targetv').textContent = v >= 1000 ? `${(v / 1000).toFixed(v % 1000 ? 1 : 0)}k` : v;
+  queue();
+});
+
+// Deep links: ?shape=ring&k=0.3&res=96&simplify=1&target=2000
+const q = new URLSearchParams(location.search);
+if (shapes[q.get('shape')]) current = q.get('shape');
+if (q.has('k')) kEl.value = Math.min(0.6, Math.max(0, +q.get('k')));
+if (q.has('res')) resEl.value = Math.round(+q.get('res') / 8) * 8;
+if (q.has('target')) targetEl.value = Math.min(20000, Math.max(200, +q.get('target')));
+if (q.has('simplify') && MeshoptSimplifier) simplifyEl.checked = q.get('simplify') === '1';
+document.getElementById('kv').textContent = (+kEl.value).toFixed(2);
+document.getElementById('resv').textContent = `${resEl.value}³`;
+targetCtl.hidden = !simplifyEl.checked;
+document.querySelectorAll('.shapes button').forEach(x => x.classList.toggle('on', x.dataset.s === current));
 
 window.addEventListener('error', e => show(`Error: ${e.message}`));
-camera.position.set(...shapes.blob.cam);
+camera.position.set(...shapes[current].cam);
 generate();
 renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); });
 </script>
