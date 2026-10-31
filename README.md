@@ -66,7 +66,7 @@ multithreaded mesher is the hard 20% this PoC skips.
 |---|---|
 | `sdfcsg.js` | The kernel (120 lines, ESM, no deps) |
 | `demo.js` | CLI demo: builds 3 trees, meshes, writes colored OBJs, verifies watertightness |
-| `docs/index.html` | GitHub Pages showcase — live generation, blend/resolution sliders |
+| `index.html` | GitHub Pages showcase — live generation, blend/resolution sliders |
 
 ## License
 
