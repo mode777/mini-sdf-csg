@@ -31,6 +31,11 @@ const { verts, colors, faces } = surfaceNets(blob, [-2.5,-2.5,-2.5], [2.5,2.5,2.
 - **Transforms:** move, uniform scale, rotate, mirror (domain transforms).
 - **Colors:** every primitive carries a material; unions blend materials across
   the blend region, cut faces inherit the cutter's color ("material residue").
+- **Optional decimation:** the showcase can pipe the dense mesh through
+  [meshoptimizer](https://github.com/zeux/meshoptimizer)'s QEM simplifier
+  (toggleable, with a triangle budget) — dense-generate → simplify → shade is a
+  complete stylized-asset pipeline, measured at <1% volume drift down to ~1–2k
+  triangles.
 - **Meshing:** naive surface nets → watertight, manifold triangle meshes
   (every edge shared by exactly two faces — `demo.js` verifies this at runtime).
 - **Zero dependencies.** Nodes are plain closures — the DAG *is* the call tree.
@@ -67,7 +72,7 @@ multithreaded mesher is the hard 20% this PoC skips.
 |---|---|
 | `sdfcsg.js` | The kernel (120 lines, ESM, no deps) |
 | `demo.js` | CLI demo: builds 3 trees, meshes, writes colored OBJs, verifies watertightness |
-| `index.html` | GitHub Pages showcase — live generation, blend/resolution sliders |
+| `index.html` | GitHub Pages showcase — live generation, blend/res/resolution + QEM-simplify toggle, deep-linkable presets |
 
 ## License
 
