@@ -37,14 +37,15 @@ const { verts, colors, faces } = surfaceNets(blob, [-2.5,-2.5,-2.5], [2.5,2.5,2.
 
 ## Measured results (Node 24, first run, no tuning)
 
-| shape | description | tris | time | watertight | χ |
-|---|---|---|---|---|---|
-| `blob` | blended spheres + capsule, hard dented cut | 21k @ 96³ | ~1.0 s | ✅ | 2 |
-| `molecule` | hard CSG (`k = 0`) | 41k @ 80³ | ~0.6 s | ✅ | 2 |
-| `ring` | torus − bite ∩ box | 37k @ 96³ | ~0.9 s | ✅ | 2 |
+| shape | description | tris | time | watertight | outward | χ |
+|---|---|---|---|---|---|---|
+| `blob` | blended spheres + capsule, hard dented cut | 21k @ 96³ | ~1.0 s | ✅ | ✅ | 2 |
+| `molecule` | hard CSG (`k = 0`) | 41k @ 80³ | ~0.6 s | ✅ | ✅ | 2 |
+| `ring` | torus − bite ∩ box | 37k @ 96³ | ~0.9 s | ✅ | ✅ | 2 |
 
 Run it yourself: `npm run demo` (writes colored `.obj` files and prints stats,
-including a manifold check via edge counting and Euler characteristic).
+including a manifold check via edge counting and Euler characteristic, plus an
+outward-winding check via the divergence-theorem signed volume).
 
 ## What it deliberately is *not*
 

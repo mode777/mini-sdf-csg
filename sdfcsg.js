@@ -100,7 +100,10 @@ export function surfaceNets(node, lo, hi, res) {
     const vx = lo[0] + px / n * h[0], vy = lo[1] + py / n * h[1], vz = lo[2] + pz / n * h[2];
     verts.push([vx, vy, vz]); colors.push(node.c(vx, vy, vz));
   }
-  const quad = (a, b, c, d) => faces.push([a, b, c], [a, c, d]);
+  // Winding note: verts wound so triangle normals point OUT of the solid
+  // (F < 0 inside). Verified by demo.js via the divergence-theorem volume test:
+  // outward-wound closed meshes enclose positive signed volume.
+  const quad = (a, b, c, d) => faces.push([a, d, c], [a, c, b]);
   for (let k = 0; k < cz; k++) for (let j = 0; j < cy; j++) for (let i = 0; i < cx; i++) {
     const s = F[gi(i, j, k)];
     if (i < cx && j > 0 && j < cy && k > 0 && k < cz &&      // edge along +x

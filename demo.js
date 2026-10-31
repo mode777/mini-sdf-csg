@@ -31,11 +31,17 @@ for (const [name, node, lo, hi, r] of demos) {
     const k = Math.min(a, b) + '-' + Math.max(a, b); edges.set(k, (edges.get(k) || 0) + 1); }
   const bad = [...edges.values()].filter(n => n !== 2).length;
   const chi = verts.length - edges.size + faces.length;
+  let vol = 0;                                              // outward-winding check
+  for (const [a, b, c] of faces) {
+    const A = verts[a], B = verts[b], C = verts[c];
+    vol += (A[0]*(B[1]*C[2]-B[2]*C[1]) - A[1]*(B[0]*C[2]-B[2]*C[0])
+          + A[2]*(B[0]*C[1]-B[1]*C[0])) / 6;
+  }
   const out = verts.map((v, i) =>                                    // OBJ with vertex colors
     `v ${v.map(x => x.toFixed(4)).join(' ')} ${colors[i].map(c => c.toFixed(3)).join(' ')}`);
   for (const f of faces) out.push(`f ${f.map(i => i + 1).join(' ')}`);
   writeFileSync(`${import.meta.dirname}/${name}.obj`, out.join('\n') + '\n');
   console.log(`${name.padEnd(9)} ${String(verts.length).padStart(6)} verts ` +
     `${String(faces.length).padStart(6)} tris  ${String(ms).padStart(5)} ms (res ${r}³)  ` +
-    `watertight=${bad === 0}  χ=${chi}`);
+    `watertight=${bad === 0}  χ=${chi}  outward=${vol > 0}`);
 }
