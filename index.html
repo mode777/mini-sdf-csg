@@ -145,7 +145,8 @@ function generate() {
       if (simplifyEl.checked && MeshoptSimplifier) {
         await MeshoptSimplifier.ready;
         const t1 = performance.now();
-        const target = Math.max(3, Math.min(Math.floor(+targetEl.value / 3) * 3, faces.length * 3));
+        // target slider is in triangles; meshopt takes an index count (×3)
+        const target = Math.min(+targetEl.value * 3, faces.length * 3);
         const [sidx, err] = MeshoptSimplifier.simplify(
           new Uint32Array(idx), new Float32Array(verts.flat()), 3, target, 1, []);
         idx = sidx;
