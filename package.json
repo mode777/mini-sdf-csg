@@ -1,0 +1,11 @@
+{
+  "name": "mini-sdf-csg",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Blended CSG on signed distance fields with vertex colors, meshed to watertight triangles — dependency-free JS",
+  "main": "sdfcsg.js",
+  "scripts": {
+    "demo": "node demo.js"
+  },
+  "license": "MIT"
+}
